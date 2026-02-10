@@ -1,105 +1,135 @@
 import { Router, Request, Response } from 'express';
-import { GenerateRequest, GenerateResponse } from '../types';
+import { GenerateRequest, GenerateResponse, GenerationMetadata } from '../types';
 import { imageQueue, queueEvents } from '../lib/queue-redis';
+import { validateGenerateRequest, ValidationError, getDescriptionPreview } from '../lib/validation';
+import { IMAGE_LIMITS } from '../lib/constants';
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
+/**
+ * Creates an error response with consistent structure
+ * 
+ * @param error - Error message
+ * @param processingTime - Time taken before error occurred
+ * @returns Formatted error response
+ */
+function createErrorResponse(error: string, processingTime: number = 0): GenerateResponse {
+  return {
+    success: false,
+    images: [],
+    metadata: {
+      prompt: '',
+      settings: {
+        numImages: IMAGE_LIMITS.DEFAULT_IMAGES,
+        resolution: IMAGE_LIMITS.DEFAULT_RESOLUTION,
+      },
+    },
+    error,
+  };
+}
+
+/**
+ * Creates a success response with consistent structure
+ * 
+ * @param images - Generated images array
+ * @param prompt - The optimized prompt used
+ * @param numImages - Number of images generated
+ * @param resolution - Resolution used
+ * @returns Formatted success response
+ */
+function createSuccessResponse(
+  images: any[],
+  prompt: string,
+  numImages: 1 | 2 | 3 | 4,
+  resolution: '512x512' | '768x768' | '1024x1024'
+): GenerateResponse {
+  return {
+    success: true,
+    images,
+    metadata: {
+      prompt,
+      settings: {
+        numImages,
+        resolution,
+      },
+    },
+  };
+}
 
 /**
  * POST /api/generate
  * Generate product images from description
+ * 
+ * Validates the request, queues the image generation job,
+ * and waits for completion before returning the results.
+ * 
+ * @route POST /api/generate
+ * @body {GenerateRequest} request - Generation request parameters
+ * @returns {GenerateResponse} Generated images and metadata
  */
 router.post('/', async (req: Request, res: Response) => {
   const startTime = Date.now();
 
   try {
-    const body: GenerateRequest = req.body;
-
-    // Validate required fields
-    if (!body.description || typeof body.description !== 'string') {
-      return res.status(400).json({
-        success: false,
-        error: 'Description is required and must be a string',
-        images: [],
-        prompt: '',
-        negativePrompt: '',
-        processingTime: 0,
-      } as GenerateResponse);
-    }
-
-    if (body.description.trim().length < 3) {
-      return res.status(400).json({
-        success: false,
-        error: 'Description must be at least 3 characters long',
-        images: [],
-        prompt: '',
-        negativePrompt: '',
-        processingTime: 0,
-      } as GenerateResponse);
-    }
+    // Validate and sanitize request
+    const validatedRequest = validateGenerateRequest(req.body);
 
     // Extract settings with defaults
-    const category = body.category || 'other';
-    const style = body.style || 'studio';
-    const angle = body.angle || 'front';
-    const color = body.color; // Optional color specification
-    const numImages = body.settings?.numImages || 1;
-    const resolution = body.settings?.resolution || '1024x1024';
+    const category = validatedRequest.category || 'other';
+    const style = validatedRequest.style || 'studio';
+    const angle = validatedRequest.angle || 'front';
+    const color = validatedRequest.color;
+    const numImages = validatedRequest.settings?.numImages || IMAGE_LIMITS.DEFAULT_IMAGES;
+    const resolution = validatedRequest.settings?.resolution || IMAGE_LIMITS.DEFAULT_RESOLUTION;
 
-    // Validate numImages
-    if (numImages < 1 || numImages > 4) {
-      return res.status(400).json({
-        success: false,
-        error: 'Number of images must be between 1 and 4',
-        images: [],
-        prompt: '',
-        negativePrompt: '',
-        processingTime: 0,
-      } as GenerateResponse);
-    }
+    // Log generation request
+    const descPreview = getDescriptionPreview(validatedRequest.description);
+    console.log(
+      `[Generate] Requesting ${numImages} image(s): "${descPreview}"` +
+      `${color ? ` (${color})` : ''} [${category}/${style}/${angle}]`
+    );
 
-    console.log(`Generating ${numImages} image(s) for: "${body.description.split('\n')[0]}"${color ? ` in ${color}` : ''}`);
-
-    // Add job to Redis Queue
+    // Add job to Redis Queue with unique ID
     const job = await imageQueue.add('generate', {
-      ...body,
+      ...validatedRequest,
       requestId: uuidv4(),
+      category,
+      style,
+      angle,
+      settings: { numImages, resolution },
     });
 
-    console.log(`Job added to Redis Queue: ${job.id}. Waiting for completion...`);
+    console.log(`[Generate] Job ${job.id} queued. Waiting for completion...`);
 
-    // Wait for the worker to finish this specific job
-    // This keeps the API synchronous as requested
-    const savedImages = await job.waitUntilFinished(queueEvents);
+    // Wait for the worker to finish this specific job (synchronous behavior)
+    const result = await job.waitUntilFinished(queueEvents);
 
     const processingTime = Date.now() - startTime;
-    console.log(`Job ${job.id} finished in ${processingTime}ms`);
+    console.log(`[Generate] Job ${job.id} completed in ${processingTime}ms`);
 
-    // Return success response
-    return res.json({
-      success: true,
-      images: savedImages,
-      prompt: "Processed by Worker", 
-      negativePrompt: "Processed by Worker", 
-      processingTime,
-    } as GenerateResponse);
+    // Extract data from worker result
+    const { images, prompt } = result;
+
+    // Return success response with metadata structure
+    return res.json(createSuccessResponse(images, prompt, numImages, resolution));
 
   } catch (error) {
     const processingTime = Date.now() - startTime;
-    console.error('Generation error:', error);
+    
+    // Handle validation errors
+    if (error instanceof ValidationError) {
+      console.warn(`[Generate] Validation error: ${error.message}`);
+      return res.status(400).json(createErrorResponse(error.message, processingTime));
+    }
 
+    // Handle general errors
+    console.error('[Generate] Error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-    return res.status(500).json({
-      success: false,
-      error: errorMessage,
-      images: [],
-      prompt: '',
-      negativePrompt: '',
-      processingTime,
-    } as GenerateResponse);
+    
+    return res.status(500).json(createErrorResponse(errorMessage, processingTime));
   }
 });
 
 export default router;
+

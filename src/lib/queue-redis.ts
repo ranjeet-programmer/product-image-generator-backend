@@ -4,44 +4,77 @@ import { GenerateRequest, GeneratedImage } from '../types';
 import { generateImages, parseResolution } from './ai-provider';
 import { saveImagesLocally } from './image-storage';
 import { optimizePrompt } from './prompt-optimizer';
+import { QUEUE, IMAGE_LIMITS } from './constants';
 
-// Redis connection - Use environment variable or default to localhost
+/**
+ * Redis connection configuration
+ * Uses environment variable or defaults to localhost
+ */
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const connection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
   tls: redisUrl.startsWith('rediss://') ? {} : undefined,
 });
 
-const QUEUE_NAME = 'image-generation';
-
-// 1. The Queue (Producer)
-export const imageQueue = new Queue(QUEUE_NAME, { connection });
-
-// 2. Queue Events (For waiting for completion)
-export const queueEvents = new QueueEvents(QUEUE_NAME, { connection });
-
-// Define the job data structure
+/**
+ * Job data structure extending the base request with tracking ID
+ */
 interface JobData extends GenerateRequest {
   requestId: string;
 }
 
-// 3. The Worker (Consumer)
-// This processes jobs from Redis
-export const worker = new Worker<JobData, GeneratedImage[]>(
-  QUEUE_NAME,
+/**
+ * Worker result structure containing images and prompt
+ */
+interface WorkerResult {
+  images: GeneratedImage[];
+  prompt: string;
+}
+
+/**
+ * The Queue (Producer)
+ * Handles adding image generation jobs to the queue
+ */
+export const imageQueue = new Queue(QUEUE.NAME, { connection });
+
+/**
+ * Queue Events handler
+ * Used for waiting for job completion
+ */
+export const queueEvents = new QueueEvents(QUEUE.NAME, { connection });
+
+/**
+ * The Worker (Consumer)
+ * Processes image generation jobs from the queue
+ * 
+ * Job processing flow:
+ * 1. Extract and validate job parameters
+ * 2. Optimize the prompt for AI generation
+ * 3. Generate images using AI provider
+ * 4. Save images to local storage
+ * 5. Return saved image metadata and prompt
+ */
+export const worker = new Worker<JobData, WorkerResult>(
+  QUEUE.NAME,
   async (job: Job<JobData>) => {
-    console.log(`[Worker] Starting job ${job.id} for: ${job.data.description.substring(0, 20)}...`);
+    const jobId = job.id || 'unknown';
+    const descPreview = job.data.description.substring(0, 50);
+    
+    console.log(`[Worker] Starting job ${jobId}: "${descPreview}..."`);
 
     const { description, category, style, angle, color, settings } = job.data;
     
-    // Defaults matching the route logic
+    // Apply defaults for optional parameters
     const safeCategory = category || 'other';
     const safeStyle = style || 'studio';
     const safeAngle = angle || 'front';
-    const numImages = settings?.numImages || 1;
-    const resolution = settings?.resolution || '1024x1024';
+    const numImages = settings?.numImages || IMAGE_LIMITS.DEFAULT_IMAGES;
+    const resolution = settings?.resolution || IMAGE_LIMITS.DEFAULT_RESOLUTION;
 
-    // 1. Optimize Prompt
+    console.log(`[Worker] Job ${jobId} settings: ${numImages} images at ${resolution} [${safeCategory}/${safeStyle}/${safeAngle}]`);
+
+    // Step 1: Optimize the prompt
+    console.log(`[Worker] Job ${jobId}: Optimizing prompt...`);
     const { prompt, negativePrompt } = optimizePrompt(
       description, 
       safeCategory, 
@@ -50,11 +83,11 @@ export const worker = new Worker<JobData, GeneratedImage[]>(
       color
     );
 
-    // 2. Parse Resolution
+    // Step 2: Parse resolution
     const { width, height } = parseResolution(resolution);
 
-    // 3. Generate
-    console.log(`[Worker] Calling AI for Job ${job.id}...`);
+    // Step 3: Generate images using AI
+    console.log(`[Worker] Job ${jobId}: Generating ${numImages} images...`);
     const imageBuffers = await generateImages({
       prompt,
       negativePrompt,
@@ -63,27 +96,40 @@ export const worker = new Worker<JobData, GeneratedImage[]>(
       height,
     });
 
-    // 4. Save
-    console.log(`[Worker] Saving ${imageBuffers.length} images for Job ${job.id}...`);
+    // Step 4: Save images locally
+    console.log(`[Worker] Job ${jobId}: Saving ${imageBuffers.length} images...`);
     const savedImages = await saveImagesLocally(imageBuffers);
 
-    // Pass metadata back as result if needed, or just images
-    return savedImages;
+    console.log(`[Worker] Job ${jobId} completed: ${savedImages.length} images saved`);
+
+    // Return both images and prompt for frontend display
+    return {
+      images: savedImages,
+      prompt,
+    };
   },
   { 
     connection,
-    concurrency: 1, // Strict limit of 1 concurrent job to respect Free Tier API
+    concurrency: QUEUE.CONCURRENCY,
     limiter: {
-      max: 5,       // Max 5 jobs
-      duration: 60000 // Per 60 seconds (Rate limiting)
+      max: QUEUE.RATE_LIMIT_MAX,
+      duration: QUEUE.RATE_LIMIT_DURATION_MS,
     }
   }
 );
 
+// Worker event handlers
 worker.on('completed', (job: any) => {
-  console.log(`[Worker] Job ${job.id} completed!`);
+  console.log(`[Worker] ✓ Job ${job.id} completed successfully`);
 });
 
 worker.on('failed', (job: any, err: any) => {
-  console.error(`[Worker] Job ${job?.id} failed:`, err);
+  console.error(`[Worker] ✗ Job ${job?.id} failed:`, err.message);
 });
+
+worker.on('error', (err: any) => {
+  console.error(`[Worker] Worker error:`, err);
+});
+
+console.log(`[Worker] Ready and listening for jobs on queue: "${QUEUE.NAME}"`);
+
