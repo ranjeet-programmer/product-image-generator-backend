@@ -120,3 +120,99 @@ export function listGeneratedImages(): string[] {
   return files;
 }
 
+// ============================================================================
+// Logo Storage Functions
+// ============================================================================
+
+/**
+ * Full path to the logos directory
+ */
+const LOGOS_DIR = path.join(process.cwd(), 'public', 'logos');
+
+/**
+ * Ensures the logos directory exists
+ * Creates the directory with all necessary parent directories if it doesn't exist
+ */
+export function ensureLogosDir(): void {
+  if (!fs.existsSync(LOGOS_DIR)) {
+    fs.mkdirSync(LOGOS_DIR, { recursive: true });
+    console.log(`[Storage] Created logos directory: ${LOGOS_DIR}`);
+  }
+}
+
+/**
+ * Saves a logo file to the logos directory
+ * 
+ * @param logoBuffer - Logo file buffer
+ * @param filename - Original filename
+ * @returns Saved logo filename and URL
+ */
+export function saveLogoFile(logoBuffer: Buffer, filename: string): { filename: string; url: string } {
+  ensureLogosDir();
+  
+  // Generate unique filename
+  const timestamp = Date.now();
+  const ext = path.extname(filename);
+  const basename = path.basename(filename, ext);
+  const uniqueFilename = `${basename}_${timestamp}${ext}`;
+  
+  const filePath = path.join(LOGOS_DIR, uniqueFilename);
+  
+  try {
+    fs.writeFileSync(filePath, logoBuffer);
+    console.log(`[Storage] Saved logo: ${uniqueFilename}`);
+    
+    return {
+      filename: uniqueFilename,
+      url: `/logos/${uniqueFilename}`,
+    };
+  } catch (error) {
+    console.error(`[Storage] Failed to save logo:`, error);
+    throw new Error('Failed to save logo file');
+  }
+}
+
+/**
+ * Gets the full file system path to a logo file
+ * 
+ * @param filename - Logo filename
+ * @returns Absolute file path
+ */
+export function getLogoPath(filename: string): string {
+  return path.join(LOGOS_DIR, filename);
+}
+
+/**
+ * Deletes a logo file from the filesystem
+ * 
+ * @param filename - Logo filename to delete
+ * @returns true if deleted successfully, false otherwise
+ */
+export function deleteLogo(filename: string): boolean {
+  try {
+    const filePath = getLogoPath(filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      console.log(`[Storage] Deleted logo: ${filename}`);
+      return true;
+    }
+    console.warn(`[Storage] Logo not found for deletion: ${filename}`);
+    return false;
+  } catch (error) {
+    console.error(`[Storage] Failed to delete logo ${filename}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Lists all logo files in the logos directory
+ * 
+ * @returns Array of logo filenames
+ */
+export function listLogos(): string[] {
+  ensureLogosDir();
+  const files = fs.readdirSync(LOGOS_DIR);
+  console.log(`[Storage] Found ${files.length} logos`);
+  return files;
+}
+

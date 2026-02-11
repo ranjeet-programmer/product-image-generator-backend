@@ -3,7 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import dotenv from 'dotenv';
 import generateRouter from './routes/generate';
-import { ensureGeneratedDir } from './lib/image-storage';
+import uploadLogoRouter from './routes/upload-logo';
+import { ensureGeneratedDir, ensureLogosDir } from './lib/image-storage';
 import { startKeepAlive } from './lib/keep-alive';
 
 // Load environment variables
@@ -16,11 +17,12 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Serve static files from public directory (for generated images)
+// Serve static files from public directory (for generated images and logos)
 app.use(express.static(path.join(process.cwd(), 'public')));
 
-// Ensure generated images directory exists
+// Ensure directories exist
 ensureGeneratedDir();
+ensureLogosDir();
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -29,6 +31,7 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/generate', generateRouter);
+app.use('/api/upload-logo', uploadLogoRouter);
 
 // 404 handler
 app.use((req, res) => {
@@ -50,10 +53,12 @@ app.listen(PORT, () => {
 Server running at: http://localhost:${PORT}
 
 Endpoints:
-  POST /api/generate  - Generate product images
-  GET  /health        - Health check
+  POST /api/generate     - Generate product images
+  POST /api/upload-logo  - Upload logo file
+  GET  /health           - Health check
 
 Generated images served at: /generated/{filename}
+Logo files served at: /logos/{filename}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   `);

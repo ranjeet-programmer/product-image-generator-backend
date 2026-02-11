@@ -87,3 +87,40 @@ export const LOG = {
   DESCRIPTION_PREVIEW_LENGTH: 20,
   ENABLE_VERBOSE: process.env.VERBOSE === 'true',
 } as const;
+
+// ============================================================================
+// Logo Overlay Configuration
+// ============================================================================
+
+export const LOGO = {
+  // Size constraints (percentage of image width)
+  MIN_SIZE: 5,
+  MAX_SIZE: 50,
+  DEFAULT_SIZE: 20,
+  
+  // Opacity constraints (0-100)
+  MIN_OPACITY: 0,
+  MAX_OPACITY: 100,
+  DEFAULT_OPACITY: 80,
+  
+  // Rotation constraints (degrees)
+  MIN_ROTATION: -360,
+  MAX_ROTATION: 360,
+  
+  // Position padding from edges (pixels)
+  EDGE_PADDING: 20,
+  
+  // Supported image formats
+  SUPPORTED_FORMATS: ['png', 'jpg', 'jpeg', 'svg'] as const,
+  
+  // Max file size for uploads (2MB)
+  MAX_FILE_SIZE: 2 * 1024 * 1024,
+  
+  // Text watermark defaults
+  TEXT_DEFAULT_FONT: 'Arial',
+  TEXT_DEFAULT_COLOR: '#FFFFFF',
+  TEXT_DEFAULT_FONT_SIZE: 48,
+  TEXT_STROKE_WIDTH: 2,
+  TEXT_STROKE_COLOR: '#000000',
+} as const;
+

@@ -66,6 +66,54 @@ export interface GenerateRequest {
   color?: string;
   /** Generation settings (optional) */
   settings?: GenerationSettings;
+  /** Logo overlay settings (optional) */
+  logo?: LogoSettings;
+}
+
+/**
+ * Logo type options
+ */
+export type LogoType = 'none' | 'image' | 'text';
+
+/**
+ * Logo position on the image
+ * Supports 9 standard positions plus center
+ */
+export type LogoPosition =
+  | 'center'
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'middle-left'
+  | 'middle-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+/**
+ * Logo overlay settings
+ */
+export interface LogoSettings {
+  /** Type of logo to apply */
+  type: LogoType;
+  /** Content: URL for image logo, text for text watermark */
+  content?: string;
+  /** Position on the image */
+  position: LogoPosition;
+  /** Size as percentage of image width (1-100) */
+  size: number;
+  /** Opacity percentage (0-100) */
+  opacity: number;
+  /** Rotation in degrees (optional) */
+  rotation?: number;
+  /** Horizontal offset in pixels (optional) */
+  offsetX?: number;
+  /** Vertical offset in pixels (optional) */
+  offsetY?: number;
+  /** Text color for text watermarks (optional, default: white) */
+  textColor?: string;
+  /** Font family for text watermarks (optional, default: Arial) */
+  fontFamily?: string;
 }
 
 /**

@@ -95,7 +95,69 @@ export function validateGenerateRequest(body: unknown): GenerateRequest {
     }
   }
 
+  // Validate logo settings if provided
+  if (req.logo) {
+    validateLogoSettings(req.logo);
+  }
+
   return req as GenerateRequest;
+}
+
+/**
+ * Validates logo settings
+ * 
+ * @param logo - Logo settings to validate
+ * @throws {ValidationError} If logo settings are invalid
+ */
+export function validateLogoSettings(logo: unknown): void {
+  if (!logo || typeof logo !== 'object') {
+    throw new ValidationError('Logo settings must be a valid object');
+  }
+
+  const settings = logo as any;
+
+  // Validate type
+  const validTypes = ['none', 'image', 'text'];
+  if (!settings.type || !validTypes.includes(settings.type)) {
+    throw new ValidationError(`Logo type must be one of: ${validTypes.join(', ')}`);
+  }
+
+  // If type is none, no further validation needed
+  if (settings.type === 'none') {
+    return;
+  }
+
+  // Validate content for non-none types  
+  if (settings.type === 'text' && (!settings.content || typeof settings.content !== 'string')) {
+    throw new ValidationError('Text content is required for text watermarks');
+  }
+
+  // Validate position
+  const validPositions = [
+    'center', 'top-left', 'top-center', 'top-right',
+    'middle-left', 'middle-right',
+    'bottom-left', 'bottom-center', 'bottom-right'
+  ];
+  if (!settings.position || !validPositions.includes(settings.position)) {
+    throw new ValidationError(`Logo position must be one of: ${validPositions.join(', ')}`);
+  }
+
+  // Validate size
+  if (typeof settings.size !== 'number' || settings.size < 5 || settings.size > 50) {
+    throw new ValidationError('Logo size must be a number between 5 and 50 (percentage of image width)');
+  }
+
+  // Validate opacity
+  if (typeof settings.opacity !== 'number' || settings.opacity < 0 || settings.opacity > 100) {
+    throw new ValidationError('Logo opacity must be a number between 0 and 100');
+  }
+
+  // Validate rotation if provided
+  if (settings.rotation !== undefined) {
+    if (typeof settings.rotation !== 'number' || settings.rotation < -360 || settings.rotation > 360) {
+      throw new ValidationError('Logo rotation must be a number between -360 and 360 degrees');
+    }
+  }
 }
 
 /**
@@ -122,3 +184,4 @@ export function getDescriptionPreview(description: string, maxLength: number = 5
   }
   return sanitized.substring(0, maxLength) + '...';
 }
+
