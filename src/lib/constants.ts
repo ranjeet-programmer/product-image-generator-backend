@@ -124,3 +124,25 @@ export const LOGO = {
   TEXT_STROKE_COLOR: '#000000',
 } as const;
 
+// ============================================================================
+// Object Detection Configuration
+// ============================================================================
+
+export const OBJECT_DETECTION = {
+  // Minimum confidence threshold for detections (0-1)
+  CONFIDENCE_THRESHOLD: 0.3,
+  
+  // API timeout in milliseconds
+  TIMEOUT_MS: 15000,
+  
+  // Replicate model for object detection
+  MODEL: 'meta/meta-llama-3-70b-instruct',
+  
+  // Product-related labels to prioritize
+  PRODUCT_LABELS: [
+    'bottle', 'can', 'cup', 'vase', 'box', 'package',
+    'container', 'product', 'phone', 'laptop', 'watch',
+    'bag', 'shoe', 'clothing', 'book',
+  ] as const,
+} as const;
+

@@ -114,6 +114,36 @@ export interface LogoSettings {
   textColor?: string;
   /** Font family for text watermarks (optional, default: Arial) */
   fontFamily?: string;
+  /** Enable smart positioning based on object detection (optional) */
+  smartPositioning?: boolean;
+  /** Cached detection data (internal use) */
+  detectionData?: DetectedObject;
+}
+
+/**
+ * Bounding box with normalized coordinates (0-1)
+ */
+export interface BoundingBox {
+  /** Center X coordinate (normalized 0-1) */
+  x: number;
+  /** Center Y coordinate (normalized 0-1) */
+  y: number;
+  /** Width (normalized 0-1) */
+  width: number;
+  /** Height (normalized 0-1) */
+  height: number;
+}
+
+/**
+ * Detected object from object detection API
+ */
+export interface DetectedObject {
+  /** Object label/class */
+  label: string;
+  /** Detection confidence (0-1) */
+  confidence: number;
+  /** Bounding box coordinates */
+  bbox: BoundingBox;
 }
 
 /**

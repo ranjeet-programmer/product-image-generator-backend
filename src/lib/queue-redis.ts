@@ -5,6 +5,7 @@ import { generateImages, parseResolution } from './ai-provider';
 import { saveImagesLocally, getImagePath, getLogoPath } from './image-storage';
 import { optimizePrompt } from './prompt-optimizer';
 import { applyLogo } from './logo-overlay';
+import { detectProductInImage, isObjectDetectionAvailable } from './object-detection';
 import { QUEUE, IMAGE_LIMITS } from './constants';
 import fs from 'fs';
 
@@ -54,8 +55,9 @@ export const queueEvents = new QueueEvents(QUEUE.NAME, { connection });
  * 2. Optimize the prompt for AI generation
  * 3. Generate images using AI provider
  * 4. Save images to local storage
- * 5. Apply logo overlay if provided
- * 6. Return saved image metadata and prompt
+ * 5. Detect products for smart logo positioning (if enabled)
+ * 6. Apply logo overlay if provided
+ * 7. Return saved image metadata and prompt
  */
 export const worker = new Worker<JobData, WorkerResult>(
   QUEUE.NAME,
@@ -76,7 +78,7 @@ export const worker = new Worker<JobData, WorkerResult>(
 
     console.log(`[Worker] Job ${jobId} settings: ${numImages} images at ${resolution} [${safeCategory}/${safeStyle}/${safeAngle}]`);
     if (logo && logo.type !== 'none') {
-      console.log(`[Worker] Job ${jobId} logo: ${logo.type} at ${logo.position}`);
+      console.log(`[Worker] Job ${jobId} logo: ${logo.type} at ${logo.position}${logo.smartPositioning ? ' (smart positioning)' : ''}`);
     }
 
     // Step 1: Optimize the prompt
@@ -106,7 +108,29 @@ export const worker = new Worker<JobData, WorkerResult>(
     console.log(`[Worker] Job ${jobId}: Saving ${imageBuffers.length} images...`);
     let savedImages = await saveImagesLocally(imageBuffers);
 
-    // Step 5: Apply logo overlay if provided
+    // Step 5: Detect products for smart logo positioning (if enabled)
+    if (logo && logo.type !== 'none' && logo.smartPositioning) {
+      if (isObjectDetectionAvailable()) {
+        console.log(`[Worker] Job ${jobId}: Running object detection for smart positioning...`);
+        // Use the first image for detection (all images should be similar)
+        const firstImagePath = getImagePath(savedImages[0].filename);
+        const firstImageBuffer = fs.readFileSync(firstImagePath);
+        
+        const detectedObject = await detectProductInImage(firstImageBuffer);
+        
+        if (detectedObject) {
+          // Cache detection data in logo settings for all images
+          logo.detectionData = detectedObject;
+          console.log(`[Worker] Job ${jobId}: Product detected, will use smart positioning`);
+        } else {
+          console.warn(`[Worker] Job ${jobId}: No product detected, falling back to regular positioning`);
+        }
+      } else {
+        console.warn(`[Worker] Job ${jobId}: Smart positioning requested but REPLICATE_API_TOKEN not configured`);
+      }
+    }
+
+    // Step 6: Apply logo overlay if provided
     if (logo && logo.type !== 'none') {
       console.log(`[Worker] Job ${jobId}: Applying ${logo.type} logo...`);
       

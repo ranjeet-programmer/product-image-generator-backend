@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
-import { LogoSettings, LogoPosition } from '../types';
+import { LogoSettings, LogoPosition, DetectedObject } from '../types';
 import { LOGO } from './constants';
 
 /**
@@ -10,6 +10,100 @@ import { LOGO } from './constants';
 interface Position {
   left: number;
   top: number;
+}
+
+/**
+ * Calculates smart position based on detected object
+ * Positions logo relative to the detected product instead of the image canvas
+ * 
+ * @param imageWidth - Width of the base image
+ * @param imageHeight - Height of the base image
+ * @param logoWidth - Width of the logo
+ * @param logoHeight - Height of the logo
+ * @param detectedObject - Detected object with bounding box
+ * @param position - Desired position relative to product
+ * @returns Position coordinates {left, top}
+ */
+function calculateSmartPosition(
+  imageWidth: number,
+  imageHeight: number,
+  logoWidth: number,
+  logoHeight: number,
+  detectedObject: DetectedObject,
+  position: LogoPosition
+): Position {
+  // Convert normalized bbox to pixel coordinates
+  const productCenterX = detectedObject.bbox.x * imageWidth;
+  const productCenterY = detectedObject.bbox.y * imageHeight;
+  const productWidth = detectedObject.bbox.width * imageWidth;
+  const productHeight = detectedObject.bbox.height * imageHeight;
+  
+  // Calculate product bounds
+  const productLeft = productCenterX - productWidth / 2;
+  const productTop = productCenterY - productHeight / 2;
+  const productRight = productCenterX + productWidth / 2;
+  const productBottom = productCenterY + productHeight / 2;
+  
+  const padding = LOGO.EDGE_PADDING;
+  let left = 0;
+  let top = 0;
+  
+  // Position relative to product bounding box
+  switch (position) {
+    case 'center':
+      left = productCenterX - logoWidth / 2;
+      top = productCenterY - logoHeight / 2;
+      break;
+    
+    case 'top-left':
+      left = productLeft + padding;
+      top = productTop + padding;
+      break;
+    
+    case 'top-center':
+      left = productCenterX - logoWidth / 2;
+      top = productTop + padding;
+      break;
+    
+    case 'top-right':
+      left = productRight - logoWidth - padding;
+      top = productTop + padding;
+      break;
+    
+    case 'middle-left':
+      left = productLeft + padding;
+      top = productCenterY - logoHeight / 2;
+      break;
+    
+    case 'middle-right':
+      left = productRight - logoWidth - padding;
+      top = productCenterY - logoHeight / 2;
+      break;
+    
+    case 'bottom-left':
+      left = productLeft + padding;
+      top = productBottom - logoHeight - padding;
+      break;
+    
+    case 'bottom-center':
+      left = productCenterX - logoWidth / 2;
+      top = productBottom - logoHeight - padding;
+      break;
+    
+    case 'bottom-right':
+      left = productRight - logoWidth - padding;
+      top = productBottom - logoHeight - padding;
+      break;
+  }
+  
+  // Ensure logo stays within image bounds
+  left = Math.max(0, Math.min(left, imageWidth - logoWidth));
+  top = Math.max(0, Math.min(top, imageHeight - logoHeight));
+  
+  return {
+    left: Math.round(left),
+    top: Math.round(top),
+  };
 }
 
 /**
@@ -22,6 +116,7 @@ interface Position {
  * @param position - Desired position
  * @param offsetX - Optional horizontal offset in pixels
  * @param offsetY - Optional vertical offset in pixels
+ * @param detectedObject - Optional detected object for smart positioning
  * @returns Position coordinates {left, top}
  */
 function calculatePosition(
@@ -31,8 +126,28 @@ function calculatePosition(
   logoHeight: number,
   position: LogoPosition,
   offsetX: number = 0,
-  offsetY: number = 0
+  offsetY: number = 0,
+  detectedObject?: DetectedObject
 ): Position {
+  // Use smart positioning if object detection data is available
+  if (detectedObject) {
+    const smartPos = calculateSmartPosition(
+      imageWidth,
+      imageHeight,
+      logoWidth,
+      logoHeight,
+      detectedObject,
+      position
+    );
+    
+    // Apply manual offsets
+    return {
+      left: Math.round(smartPos.left + offsetX),
+      top: Math.round(smartPos.top + offsetY),
+    };
+  }
+  
+  // Traditional positioning (relative to image canvas)
   const padding = LOGO.EDGE_PADDING;
   let left = 0;
   let top = 0;
@@ -253,7 +368,7 @@ async function applyImageLogo(
   const finalLogoWidth = logoMetadata.width || logoWidth;
   const finalLogoHeight = logoMetadata.height || logoHeight;
   
-  // Calculate position
+  // Calculate position (using smart positioning if available)
   const position = calculatePosition(
     baseMetadata.width,
     baseMetadata.height,
@@ -261,7 +376,8 @@ async function applyImageLogo(
     finalLogoHeight,
     logoSettings.position,
     logoSettings.offsetX,
-    logoSettings.offsetY
+    logoSettings.offsetY,
+    logoSettings.detectionData
   );
   
   console.log(
@@ -327,7 +443,7 @@ async function applyTextWatermark(
   const textWidth = textMetadata.width || 0;
   const textHeight = textMetadata.height || 0;
   
-  // Calculate position
+  // Calculate position (using smart positioning if available)
   const position = calculatePosition(
     baseMetadata.width,
     baseMetadata.height,
@@ -335,7 +451,8 @@ async function applyTextWatermark(
     textHeight,
     logoSettings.position,
     logoSettings.offsetX,
-    logoSettings.offsetY
+    logoSettings.offsetY,
+    logoSettings.detectionData
   );
   
   console.log(
